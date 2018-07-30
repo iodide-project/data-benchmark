@@ -1,4 +1,5 @@
 import itertools
+import json
 import os
 import shutil
 import subprocess
@@ -11,12 +12,20 @@ import server
 
 
 DIMENSIONS = {
-    'size': [10, 100, 1000],
+    'size': [10, 100, 1000, 10000, 100000, 1000000],
     'type': ['array', 'table'],
     'format': ['csv', 'json'],
     'compression': ['none', 'gzip'],
     'browser': ['firefox', 'chrome']
 }
+
+
+RESULT_COLUMNS = [
+    'runtime',
+    'mem',
+    'nbytes',
+    'niter'
+]
 
 
 def call_for_product(func, args, dimensions):
@@ -28,27 +37,32 @@ def call_for_product(func, args, dimensions):
 
 
 def main():
+    # Create a cache directory here where resources will be served from
     cache_dir = './.cache'
     if not os.path.isdir(cache_dir):
         os.makedirs(cache_dir)
 
+    # Build and install the Javascript side of things 
     webapp_dir = os.path.join(os.path.dirname(__file__), '..', 'webapp')
-    subprocess.run(['npm', 'install'], cwd=webapp_dir)
+    # subprocess.run(['npm', 'install'], cwd=webapp_dir)
     subprocess.run(['npm', 'run', 'build'], cwd=webapp_dir)
     bundle_dir = os.path.join(webapp_dir, 'dist')
     for filename in os.listdir(bundle_dir):
         shutil.copy(os.path.join(bundle_dir, filename), cache_dir)
 
+    # Generate the source data files
     call_for_product(generate.generate_file, (cache_dir,), DIMENSIONS)
 
+    # Start serving files in another process
     port = server.spawn_web_server(cache_dir)
 
-    columns = list(DIMENSIONS.keys()) + ['nbytes', 'runtime', 'mem']
+    # Run the benchmarks and collect the results
+    columns = list(DIMENSIONS.keys()) + RESULT_COLUMNS
     if os.path.isfile('results.json'):
-        results = pd.read_json('results.json')
+        with open('results.json', 'r') as fd:
+            results = json.load(fd)
     else:
-        results = pd.DataFrame(columns=columns)
-    try:
-        call_for_product(runner.run_benchmark, (cache_dir, results, port,), DIMENSIONS)
-    finally:
-        results.to_json('results.json')
+        results = []
+    call_for_product(runner.run_benchmark, (cache_dir, results, port,), DIMENSIONS)
+    with open('results.json', 'w') as fd:
+        json.dump(results, fd)

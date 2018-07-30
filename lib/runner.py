@@ -3,7 +3,6 @@ import os
 
 
 import numpy as np
-import pandas as pd
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.common.exceptions import TimeoutException
 
@@ -21,14 +20,14 @@ class Ready:
 class Done:
     def __call__(self, driver):
         done = driver.execute_script(
-            "return window.end_time")
+            "return window.benchmark_result")
         return done is not None
 
 
 class SeleniumWrapper:
-    def __init__(self, port):
+    def __init__(self, port, size):
         driver = self.get_driver()
-        wait = WebDriverWait(driver, timeout=20)
+        wait = WebDriverWait(driver, timeout=size)
         driver.get(f'http://127.0.0.1:{port}/index.html')
         wait.until(Ready())
         self.wait = wait
@@ -52,57 +51,50 @@ class FirefoxWrapper(SeleniumWrapper):
         return Firefox(
             executable_path='geckodriver', firefox_options=options)
 
+    def print_log(self):
+        # TODO
+        pass
+
 
 class ChromeWrapper(SeleniumWrapper):
     def get_driver(self):
         from selenium.webdriver import Chrome
         from selenium.webdriver.chrome.options import Options
         from selenium.common.exceptions import WebDriverException
+        from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
         options = Options()
+        options.binary_location = '/usr/bin/google-chrome-stable'
         options.add_argument('--headless')
+        options.add_argument('--enable-precise-memory-info')
+
+        d = DesiredCapabilities.CHROME
+        d['loggingPrefs'] = { 'browser': 'ALL' }
 
         self.JavascriptException = WebDriverException
 
-        return Chrome(chrome_options=options)
+        return Chrome(chrome_options=options, desired_capabilities=d)
+
+    def print_log(self):
+        for entry in self.driver.get_log('browser'):
+            print(entry)
 
 
-def update_result(results, attrs, runtime, nbytes, mem):
-    # if len(results) > 0:
-    #     fields = np.ones((len(results),), np.bool)
-    #     for key, val in attrs.items():
-    #         fields &= results[key] == val
-    #     if fields.sum() == 1:
-    #         subset = results.iloc[fields]
-    #     elif fields.sum() == 0:
-    #         subset = results.append(attrs, ignore_index=True)
-    #     else:
-    #         raise ValueError("Duplicate results in table")
-    # else:
-    #     subset = results.append(attrs, ignore_index=True)
-
-    row = dict(attrs)
-    row['runtime'] = runtime
-    row['nbytes'] = nbytes
-    row['mem'] = mem
-
-    if len(results) != 0:
-        fields = np.ones((len(results),), np.bool)
+def update_result(results, attrs, result):
+    for row in results:
         for key, val in attrs.items():
-            fields &= results[key] == val
-        count = np.sum(fields)
-        if count == 1:
-            idx = fields.nonzero()[0][0]
-        elif count == 0:
-            idx = len(results)
+            if row[key] != val:
+                break
         else:
-            raise ValueError("Duplicate results")
+            row.update(result)
+            break
     else:
-        idx = 0
-    results.loc[idx] = row
-    print(results)
+        row = dict(attrs)
+        row.update(result)
+        results.append(row)
 
-    results.to_json('results.json')
+    with open('results.json', 'w') as fd:
+        json.dump(results, fd)
 
     return results
 
@@ -111,35 +103,33 @@ def run_benchmark(attrs, cache_dir, results, port):
     print("Running benchmark", attrs)
 
     filename = generate.get_filename(attrs)
+    attrs_json = json.dumps(attrs)
 
     if attrs['browser'] == 'firefox':
-        sel = FirefoxWrapper(port)
+        sel = FirefoxWrapper(port, attrs['size'])
     elif attrs['browser'] == 'chrome':
-        sel = ChromeWrapper(port)
+        sel = ChromeWrapper(port, attrs['size'])
     else:
         raise NotImplementedError()
 
-    runtime = None
-
     try:
-        attrs_json = json.dumps(attrs)
-
-        sel.driver.execute_script(f'window.run_benchmark("{filename}", {attrs_json})')
+        sel.driver.execute_script(
+            f'window.run_benchmark("{filename}", {attrs_json});')
         try:
             sel.wait.until(Done())
         except TimeoutException:
-            pass
+            result = {
+                'runtime': np.inf,
+                'mem': np.inf,
+            }
         else:
-            runtime = sel.driver.execute_script(
-                'return window.end_time - window.start_time')
-        print("Timing result: ", runtime)
+            result = sel.driver.execute_script(
+                'return window.benchmark_result;')
+        print("Timing result: ", result)
     finally:
+        sel.print_log()
         sel.driver.quit()
 
-        nbytes = os.stat(os.path.join(cache_dir, filename))[6]
-        mem = 0
+        result['nbytes'] = os.stat(os.path.join(cache_dir, filename)).st_size
 
-        update_result(results, attrs, runtime, nbytes, mem)
-
-    
-        
+        update_result(results, attrs, result)

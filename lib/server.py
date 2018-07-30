@@ -57,9 +57,12 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
         self.send_response(http.HTTPStatus.OK)
         self.send_header('Content-type', mimetype)
-        self.send_header('Content-Length', str(fs[6]))
+        self.send_header('Content-Length', str(fs.st_size))
         if attrs.get('compression') == 'gzip':
             self.send_header('Content-Encoding', 'gzip')
+        # We don't ever want the browser to cache
+        self.send_header('pragma', 'no-cache')
+        self.send_header('cache-control', 'no-cache')
         self.end_headers()
 
         return f

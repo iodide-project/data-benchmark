@@ -1,4 +1,6 @@
+import csv
 import gzip
+import json
 import os
 import hashlib
 import shutil
@@ -18,12 +20,7 @@ def get_attrs_for_file(hash):
 
 
 def get_filename(attrs):
-    m = hashlib.sha256()
-    m.update(str(attrs['size']).encode('ascii'))
-    m.update(attrs['type'].encode('ascii'))
-    m.update(attrs['format'].encode('ascii'))
-    m.update(attrs['compression'].encode('ascii'))
-    digest = m.hexdigest()[:16]
+    digest = '{type}_{compression}_{size}.{format}'.format(**attrs)
     REVERSE_LOOKUP[digest] = attrs
     return digest
 
@@ -39,22 +36,31 @@ def generate_file(attrs, cache_dir):
     np.random.seed(0)
 
     if attrs['type'] == 'array':
-        data = np.random.random((attrs['size'], 100))
+        data = np.random.random((attrs['size'], 26)).tolist()
+
+        with open(filepath, 'w') as fd:
+            if attrs['format'] == 'csv':
+                writer = csv.writer(fd)
+                for row in data:
+                    writer.writerow(row)
+            elif attrs['format'] == 'json':
+                json.dump(data, fd)
+
     elif attrs['type'] == 'table':
         columns = string.ascii_uppercase
         data = [
             dict((col, np.random.random()) for col in columns)
             for i in range(attrs['size'])]
+
+        df = pd.DataFrame(data)
+
+        with open(filepath, 'w') as fd:
+            if attrs['format'] == 'csv':
+                df.to_csv(fd, header=False)
+            elif attrs['format'] == 'json':
+                df.to_json(fd)
     else:
         raise NotImplementedError()
-
-    df = pd.DataFrame(data)
-
-    with open(filepath, 'w') as fd:
-        if attrs['format'] == 'csv':
-            df.to_csv(fd, header=False)
-        elif attrs['format'] == 'json':
-            df.to_json(fd)
 
     if attrs['compression'] == 'none':
         pass
