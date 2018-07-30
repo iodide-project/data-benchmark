@@ -6,19 +6,28 @@ window.benchmark_result = undefined;
 
 function run_csv(filename, attrs, done_callback) {
     function finish_csv(results, file) {
-        done_callback();
+        done_callback(results.data);
+    }
+
+    let options = {
+        download: true,
+        complete: finish_csv,
+        skipEmptyLines: true,
+        dynamicTyping: true
+    };
+
+    if (attrs['type'] == 'table') {
+        options['header'] = true;
     }
 
     window.start_time = performance.now();
-    Papa.parse(filename, { download: true, complete: finish_csv })
+    Papa.parse(filename, options);
 }
 
 function run_json(filename, attrs, done_callback) {
-    fetch(filename).then((response) => {
-        response.json();
-    }).then((json) => {
-        done_callback();
-    });
+    fetch(filename)
+        .then((response) => response.json())
+        .then((json) => done_callback(json));
 }
 
 function get_benchmark_function(attrs) {
@@ -33,13 +42,49 @@ function get_benchmark_function(attrs) {
 
 let TARGET_TIME = 1000;
 
-function run_benchmark(filename, attrs) { 
+function validate_content(content, attrs) {
+    if (content.length != attrs['size']) {
+        throw new Error("Content is wrong size");
+    }
+
+    if (attrs['type'] == 'array') {
+        function index_row(i) { return i; };
+    } else if (attrs['type'] == 'table') {
+        function index_row(i) { return String.fromCharCode(i + 65); };
+    }
+
+    for (let row of content) {
+        if (attrs['type'] == 'array') {
+            if (row.length != 26) {
+                throw new Error("row is wrong size " + row.length);
+            }
+        } else if (attrs['type'] == 'table') {
+            if (Object.keys(row).length != 26) {
+                throw new Error("row is wrong size " + row.length);
+            }
+        }
+
+        let sum = 0;
+        for (let i = 0; i < 25; ++i) {
+            sum += row[index_row(i)];
+        }
+
+        let expected_sum = row[index_row(25)]
+        if (!(sum - 1e-6 < expected_sum && sum + 1e-6 > expected_sum)) {
+            throw new Error("invalid sum");
+        }
+    }
+}
+
+function run_benchmark(filename, attrs) {
     let func = get_benchmark_function(attrs);
 
     // First, estimate the approximate time
     let start_time = performance.now();
-    func(filename, attrs, () => {
+    func(filename, attrs, (content) => {
         let end_time = performance.now();
+
+        validate_content(content, attrs);
 
         // Calculate the number of iterations we should run to take approx
         // TARGET_TIME
@@ -51,7 +96,7 @@ function run_benchmark(filename, attrs) {
         let i = 0;
         let maxHeap = 0;
 
-        function run_iter() {
+        function run_iter(content) {
             if (performance.memory !== undefined) {
                 maxHeap = Math.max(performance.memory.usedJSHeapSize, maxHeap);
             }

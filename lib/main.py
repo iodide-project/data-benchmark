@@ -12,11 +12,11 @@ import server
 
 
 DIMENSIONS = {
-    'size': [10, 100, 1000, 10000, 100000, 1000000],
+    'size': [10, 100], # , 1000, 10000, 100000, 1000000],
     'type': ['array', 'table'],
     'format': ['csv', 'json'],
     'compression': ['none', 'gzip'],
-    'browser': ['firefox', 'chrome']
+    'browser': ['chrome']
 }
 
 

@@ -35,9 +35,11 @@ def generate_file(attrs, cache_dir):
 
     np.random.seed(0)
 
-    if attrs['type'] == 'array':
-        data = np.random.random((attrs['size'], 26)).tolist()
+    data = np.random.random((attrs['size'], 26))
+    data[:, 25] = np.sum(data[:, :25], axis=1)
 
+    if attrs['type'] == 'array':
+        data = data.tolist()
         with open(filepath, 'w') as fd:
             if attrs['format'] == 'csv':
                 writer = csv.writer(fd)
@@ -49,16 +51,16 @@ def generate_file(attrs, cache_dir):
     elif attrs['type'] == 'table':
         columns = string.ascii_uppercase
         data = [
-            dict((col, np.random.random()) for col in columns)
-            for i in range(attrs['size'])]
-
+            dict((col, x) for (col, x) in zip(columns, row))
+            for row in data]
         df = pd.DataFrame(data)
 
         with open(filepath, 'w') as fd:
             if attrs['format'] == 'csv':
-                df.to_csv(fd, header=False)
+                df.to_csv(fd, index=False)
             elif attrs['format'] == 'json':
-                df.to_json(fd)
+                df.to_json(fd, orient='records')
+
     else:
         raise NotImplementedError()
 
