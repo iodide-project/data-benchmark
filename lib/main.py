@@ -12,9 +12,10 @@ import server
 
 
 DIMENSIONS = {
-    'size': [10, 100], # , 1000, 10000, 100000, 1000000],
+    # 'size': [10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000],
+    'size': [10000000],
     'type': ['array', 'table'],
-    'format': ['csv', 'json'],
+    'format': ['csv', 'json', 'arrow'],
     'compression': ['none', 'gzip'],
     'browser': ['chrome']
 }
@@ -33,6 +34,10 @@ def call_for_product(func, args, dimensions):
 
     for prod in itertools.product(*(x[1] for x in dimensions)):
         attrs = dict((dim[0], p) for dim, p in zip(dimensions, prod))
+        if attrs['format'] == 'arrow' and attrs['type'] == 'array':
+            continue
+        if attrs['size'] > 1000000 and attrs['format'] != 'arrow':
+            continue
         func(attrs, *args)
 
 
@@ -57,12 +62,12 @@ def main():
     port = server.spawn_web_server(cache_dir)
 
     # Run the benchmarks and collect the results
-    columns = list(DIMENSIONS.keys()) + RESULT_COLUMNS
     if os.path.isfile('results.json'):
         with open('results.json', 'r') as fd:
             results = json.load(fd)
     else:
         results = []
-    call_for_product(runner.run_benchmark, (cache_dir, results, port,), DIMENSIONS)
+    call_for_product(
+        runner.run_benchmark, (cache_dir, results, port), DIMENSIONS)
     with open('results.json', 'w') as fd:
         json.dump(results, fd)

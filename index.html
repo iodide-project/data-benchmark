@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>untitled - iodide</title>
+<link rel="stylesheet" type="text/css" href="https://iodide.io/master/iodide.master.css">
+</head>
+<body>
+<script id="jsmd" type="text/jsmd">
+%% meta
+{
+  "lastExport": "2018-07-30T19:56:43.443Z"
+}
+
+%% md
+
+# How much data can we load into a browser tab?
+
+%% resource
+
+https://cdn.plot.ly/plotly-latest.min.js
+
+%% js
+var results;
+fetch('./results2.json')
+    .then(response => response.json())
+    .then(json => { results = json; return null });
+
+%% js
+
+function plot_result(result_getter, yaxis_title) {
+    colors = {
+        'csv': 'blue',
+        'json': 'green',
+        'arrow': 'orange'
+    };
+
+    var lines = {};
+    for (row of results) {
+        if (row.type != 'table') {
+            continue;
+        }
+    
+        let line_key = `${row.format}_${row.compression}`;
+        if (lines[line_key] === undefined) {
+            lines[line_key] = {
+                x: [],
+                y: [],
+                type: 'scatter',
+                name: line_key,
+                line: {
+                    color: colors[row.format],
+                    dash: (row.compression == 'gzip') ? "dash" : "solid"
+                }
+            };
+        }
+        lines[line_key].x.push(row.size);
+        lines[line_key].y.push(result_getter(row));
+    }
+    Plotly.newPlot(
+        iodide.output.element('div'),
+        Object.values(lines),
+ 
+        {
+            xaxis: { title: 'number of rows', range: [0, 8] , type: 'log' },
+            yaxis: { title: yaxis_title, type: 'log'}
+        }
+    ); 
+}
+
+%% js
+
+plot_result(row => row.runtime, 'time (in ms)');
+
+%% js
+
+plot_result(row => row.mem, 'heap usage (in bytes)');
+
+%% js
+
+plot_result(row => (row.nbytes / row.runtime / 1000), 'bytes per second');
+
+</script>
+<div id='page'></div>
+<script src='https://iodide.io/master/iodide.master.js'></script>
+</body>
+</html> 

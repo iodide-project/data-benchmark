@@ -2,7 +2,6 @@ import csv
 import gzip
 import json
 import os
-import hashlib
 import shutil
 import string
 import tempfile
@@ -10,6 +9,7 @@ import tempfile
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 
 
 REVERSE_LOOKUP = {}
@@ -38,15 +38,20 @@ def generate_file(attrs, cache_dir):
     data = np.random.random((attrs['size'], 26))
     data[:, 25] = np.sum(data[:, :25], axis=1)
 
+    open_mode = 'w'
+    if attrs['format'] == 'arrow':
+        open_mode = 'wb'
+
     if attrs['type'] == 'array':
-        data = data.tolist()
-        with open(filepath, 'w') as fd:
+        with open(filepath, open_mode) as fd:
             if attrs['format'] == 'csv':
                 writer = csv.writer(fd)
-                for row in data:
+                for row in data.tolist():
                     writer.writerow(row)
             elif attrs['format'] == 'json':
-                json.dump(data, fd)
+                json.dump(data.tolist(), fd)
+            elif attrs['format'] == 'arrow':
+                raise NotImplementedError()
 
     elif attrs['type'] == 'table':
         columns = string.ascii_uppercase
@@ -55,11 +60,16 @@ def generate_file(attrs, cache_dir):
             for row in data]
         df = pd.DataFrame(data)
 
-        with open(filepath, 'w') as fd:
+        with open(filepath, open_mode) as fd:
             if attrs['format'] == 'csv':
                 df.to_csv(fd, index=False)
             elif attrs['format'] == 'json':
                 df.to_json(fd, orient='records')
+            elif attrs['format'] == 'arrow':
+                batch = pa.RecordBatch.from_pandas(df, preserve_index=False)
+                writer = pa.RecordBatchStreamWriter(fd, batch.schema)
+                writer.write_batch(batch)
+                writer.close()
 
     else:
         raise NotImplementedError()

@@ -1,4 +1,5 @@
 var Papa = require('papaparse');
+var Arrow = require('@apache-arrow/es5-cjs');
 
 
 window.benchmark_result = undefined;
@@ -30,11 +31,22 @@ function run_json(filename, attrs, done_callback) {
         .then((json) => done_callback(json));
 }
 
+function run_arrow(filename, attrs, done_callback) {
+    fetch(filename)
+        .then((response) => response.arrayBuffer())
+        .then((buffer) => {
+            let table = Arrow.Table.from(new Uint8Array(buffer));
+            done_callback(table);
+        });
+}
+
 function get_benchmark_function(attrs) {
     if (attrs['format'] == 'csv') {
         return run_csv;
     } else if (attrs['format'] == 'json') {
         return run_json;
+    } else if (attrs['format'] == 'arrow') {
+        return run_arrow;
     } else {
         throw new Error(`Unknown format ${attrs['format']}`);
     }
@@ -47,31 +59,49 @@ function validate_content(content, attrs) {
         throw new Error("Content is wrong size");
     }
 
-    if (attrs['type'] == 'array') {
-        function index_row(i) { return i; };
+    if (attrs['format'] == 'arrow') {
+        function index_row(row, i) { return row.get(i); }
+    } else if (attrs['type'] == 'array') {
+        function index_row(row, i) { return row[i]; };
     } else if (attrs['type'] == 'table') {
-        function index_row(i) { return String.fromCharCode(i + 65); };
+        function index_row(row, i) { return row[String.fromCharCode(i + 65)]; };
     }
 
-    for (let row of content) {
-        if (attrs['type'] == 'array') {
+    let count = 0;
+    for (let i = 0; i < content.length; ++i) {
+        let row;
+        if (attrs['format'] == 'arrow') {
+            row = content.get(i);
             if (row.length != 26) {
                 throw new Error("row is wrong size " + row.length);
             }
-        } else if (attrs['type'] == 'table') {
-            if (Object.keys(row).length != 26) {
-                throw new Error("row is wrong size " + row.length);
+        } else {
+            row = content[i];
+            if (attrs['type'] == 'array') {
+                if (row.length != 26) {
+                    throw new Error("row is wrong size " + row.length);
+                }
+            } else if (attrs['type'] == 'table') {
+                if (Object.keys(row).length != 26) {
+                    throw new Error("row is wrong size " + Object.keys(row).length);
+                }
             }
         }
 
         let sum = 0;
         for (let i = 0; i < 25; ++i) {
-            sum += row[index_row(i)];
+            sum += index_row(row, i);
         }
 
-        let expected_sum = row[index_row(25)]
+        let expected_sum = index_row(row, 25);
         if (!(sum - 1e-6 < expected_sum && sum + 1e-6 > expected_sum)) {
-            throw new Error("invalid sum");
+            throw new Error("invalid sum " + sum);
+        }
+
+        // If we haven't found an error yet, this is probably good enough...
+        count += 1;
+        if (count > 5) {
+            break;
         }
     }
 }

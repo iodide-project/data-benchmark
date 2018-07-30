@@ -52,7 +52,7 @@ class FirefoxWrapper(SeleniumWrapper):
             executable_path='geckodriver', firefox_options=options)
 
     def print_log(self):
-        # TODO
+        # TODO: Firefox doesn't have built-in support for this
         pass
 
 
@@ -112,22 +112,28 @@ def run_benchmark(attrs, cache_dir, results, port):
     else:
         raise NotImplementedError()
 
+    # TODO: Fix this -- Firefox doesn't like Infinity in JSON
+    result = {
+        'runtime': np.inf,
+        'mem': np.inf,
+    }
+
     try:
         sel.driver.execute_script(
             f'window.run_benchmark("{filename}", {attrs_json});')
         try:
             sel.wait.until(Done())
         except TimeoutException:
-            result = {
-                'runtime': np.inf,
-                'mem': np.inf,
-            }
+            pass
         else:
             result = sel.driver.execute_script(
                 'return window.benchmark_result;')
         print("Timing result: ", result)
-    finally:
+    except sel.JavascriptException:
+        pass
+    else:
         sel.print_log()
+    finally:
         sel.driver.quit()
 
         result['nbytes'] = os.stat(os.path.join(cache_dir, filename)).st_size

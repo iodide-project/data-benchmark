@@ -50,6 +50,8 @@ class CustomHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
                 mimetype = 'text/csv'
             elif attrs['format'] == 'json':
                 mimetype = 'application/json'
+            elif attrs['format'] == 'arrow':
+                mimetype = 'application/arrow'
             else:
                 raise NotImplementedError()
 
@@ -74,6 +76,7 @@ def run_web_server(path, q):
     os.chdir(path)
     Handler = CustomHTTPRequestHandler
 
+    # Make the server quiet
     def dummy_log(*args, **kwargs):
         pass
     Handler.log_message = dummy_log
